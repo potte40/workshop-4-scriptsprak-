@@ -28,15 +28,12 @@ Files Modified Last 7 Days: 12
 
 SECURITY FINDINGS
 -----------------
-Critical Issues Found: 14
+Critical Issues Found: 11
 
 . Weak Passwords Detected:
    - RT-EDGE-02.conf "enable password cisco123" (line 7)
-   - RT-EDGE-02.conf "enable password cisco123" (line 7)
-   - SW-ACCESS-01.conf "enable password password" (line 8)
    - SW-ACCESS-01.conf "enable password password" (line 8)
    - SW-CORE-01.conf "username admin privilege 15 secret admin" (line 36)
-   - SW-CORE-02.conf "enable password Password123" (line 7)
    - SW-CORE-02.conf "enable password Password123" (line 7)
 
 . Default SNMP Communities:
@@ -52,18 +49,22 @@ Critical Issues Found: 14
 
 LOG ANALYSIS
 ------------
-Errors in Last 24 Hours: Microsoft.PowerShell.Commands.GenericMeasureInfo.Sum
-- system-2024-10-13.log: 5 errors
+Errors in Last 24 Hours: 22
+
 - security-2024-10-13.log: 6 errors
+- system-2024-10-13.log: 5 errors
 - security-2024-10-14.log: 6 errors
 - system-2024-10-14.log: 5 errors
 
-Failed Login Attempts:
-- access-2024-10-14.log: 3 failed attempts
-- security-2024-10-13.log: 6 failed attempts
-- system-2024-10-13.log: 1 failed attempts
-- security-2024-10-14.log: 4 failed attempts
-- system-2024-10-14.log: 1 failed attempts
+Failed Login Attempts: 4
+- 2 attempts from 203.0.113.99
+- 1 attempts from 10.0.0.50
+- 1 attempts from 10.0.0.100
+
+Top Error Categories:
+. Authentication failures: 10
+. Service failures: 16
+. Interface down events: 2
 
 MISSING BACKUPS
 ---------------

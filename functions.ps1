@@ -4,10 +4,10 @@ function Find-SecurityIssues {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [string]$Path,          # Basmappen att söka i
+        [string]$Path, 
 
         [Parameter()]
-        [string[]]$FileTypes = @("*.conf", "*.rules", "*.log")  # Filtyper att söka i
+        [string[]]$FileTypes = @("*.conf", "*.rules", "*.log")
     )
 
     # Definiera sökmönster
@@ -15,8 +15,7 @@ function Find-SecurityIssues {
         "password",          
         "secret",            
         "public",           
-        "private",
-        "enable password"    
+        "private"    
     )
 
     $results = @()
@@ -26,8 +25,8 @@ function Find-SecurityIssues {
         foreach ($file in $files) {
             foreach ($pattern in $patterns) {
                 # Använd Select-String för att söka efter mönster
-                $matches = Select-String -Path $file.FullName -Pattern $pattern -SimpleMatch
-                foreach ($match in $matches) {
+                $foundmatches = Select-String -Path $file.FullName -Pattern $pattern -SimpleMatch
+                foreach ($match in $foundmatches) {
                     $results += [PSCustomObject]@{
                         File       = $file.FullName
                         LineNumber = $match.LineNumber

@@ -105,16 +105,61 @@ $recentFiles = $allFiles | Where-Object {
 # ================================
 # LOG ANALYSIS
 # ================================
-$logErrors = @{}
-$failedLogins = @{}
+$logErrors = @{}           # Behåll errors per fil
+$failedPerIP = @{}         # Räknar failed logins per IP
+$errorCategories = @{
+    "Authentication failures" = 0
+    "Interface down events"   = 0
+    "Service failures"        = 0
+}
+$ipPattern = '\b\d{1,3}(\.\d{1,3}){3}\b'
 
 foreach ($log in $logFiles) {
-    $errorCount = (Select-String -Path $log.FullName -Pattern "ERROR").Count
-    $failCount = (Select-String -Path $log.FullName -Pattern "FAILED").Count
+    $content = Get-Content $log.FullName
 
-    if ($errorCount -gt 0) { $logErrors[$log.Name] = $errorCount }
-    if ($failCount -gt 0) { $failedLogins[$log.Name] = $failCount }
+    # Räkna ERROR per fil
+    $errorMatches = $content | Select-String -Pattern "ERROR"
+    if ($errorMatches.Count -gt 0) { $logErrors[$log.Name] = $errorMatches.Count }
+
+    # Hitta FAILED LOGIN och extrahera IP
+    $failedMatches = $content | Select-String -Pattern "LOGIN FAIL" -SimpleMatch
+    foreach ($match in $failedMatches) {
+        $ips = ($match.Line | Select-String -Pattern $ipPattern -AllMatches).Matches.Value
+        if (-not $ips) { $ips = "unknown" }
+        foreach ($ip in $ips) {
+            if ($failedPerIP.ContainsKey($ip)) {
+                $failedPerIP[$ip]++
+            }
+            else {
+                $failedPerIP[$ip] = 1
+            }
+            $failedSum = ($failedPerIP.Values | Measure-Object -Sum).Sum
+        }
+    }
+
+
+    $interfaceDownPattern = 'ERROR.*Ethernet[\d/]+ down'
+    $interfaceDownMatches = $content | Select-String -Pattern $interfaceDownPattern
+
+    # Räkna Authentication failures
+    $authFails = ($content | Select-String -Pattern "authentication failed").Count
+    $errorCategories["Authentication failures"] += $authFails
+
+    # Räkna Interface down events
+    $interfaceDownMatches = $content | Select-String -Pattern $interfaceDownPattern
+    $interfaceDownCount = $interfaceDownMatches.Count
+    $errorCategories["Interface down events"] += $interfaceDownCount
+
+    # Räkna Service failures som alla ERROR minus auth och interface
+    $totalErrors = ($content | Select-String -Pattern "ERROR").Count
+    $serviceFailures = $totalErrors - $authFails - $interfaceDownCount
+
+    # Grupp per kategori
+    $errorCategories["Authentication failures"] += $authFails
+    $errorCategories["Interface down events"] += $interfaceDownMatches.Count
+    $errorCategories["Service failures"] += $serviceFailures
 }
+
 
 # ================================
 # MISSING BACKUPS
@@ -181,18 +226,23 @@ if ($missingEncryption.Count -gt 0) {
 # ================================
 # LOG ANALYSIS REPORT
 # ================================
-$report += "`nLOG ANALYSIS
-------------
-Errors in Last 24 Hours: $($logErrors.Values | Measure-Object -Sum).Sum
-"
+$report += "`nLOG ANALYSIS`n------------`n"
 
-foreach ($key in $logErrors.Keys) {
-    $report += "- $($key): $($logErrors[$key]) errors`n"
+$errorsSum = ($logErrors.Values | Measure-Object -Sum).Sum
+$report += "Errors in Last 24 Hours: $errorsSum`n`n"
+
+foreach ($logName in $logErrors.Keys) {
+    $report += "- ${logName}: $($logErrors[$logName]) errors`n"
 }
 
-$report += "`nFailed Login Attempts:`n"
-foreach ($key in $failedLogins.Keys) {
-    $report += "- $($key): $($failedLogins[$key]) failed attempts`n"
+$report += "`nFailed Login Attempts: $failedSum`n"
+foreach ($ip in $failedPerIP.Keys) {
+    $report += "- $($failedPerIP[$ip]) attempts from $ip`n"
+}
+
+$report += "`nTop Error Categories:`n"
+foreach ($category in $errorCategories.Keys) {
+    $report += ". ${category}: $($errorCategories[$category])`n"
 }
 
 # ================================
@@ -213,6 +263,3 @@ foreach ($missing in $missingBackups) {
 # ================================
 $report | Out-File -FilePath $reportPath -Encoding UTF8
 Write-Host "Security audit report created at $reportPath"
-
-
-
