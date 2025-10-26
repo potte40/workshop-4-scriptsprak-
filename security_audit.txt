@@ -1,6 +1,6 @@
-================================================================================
-                    SECURITY AUDIT REPORT
-================================================================================
+===============================================================================
+                        SECURITY AUDIT REPORT
+===============================================================================
 Generated: 2024-10-14 00:00:00
 Audit Path: C:\Users\potte\Desktop\Skola\Scriptspråk\GITHUB\workshop-4-scriptsprak-\network_configs
 
@@ -28,13 +28,16 @@ Files Modified Last 7 Days: 12
 
 SECURITY FINDINGS
 -----------------
-Critical Issues Found: 11
+Critical Issues Found: 13
 
 . Weak Passwords Detected:
+   - baseline-router.conf "No 'enable password' or 'enable secret' found" (line )
    - RT-EDGE-02.conf "enable password cisco123" (line 7)
    - SW-ACCESS-01.conf "enable password password" (line 8)
-   - SW-CORE-01.conf "username admin privilege 15 secret admin" (line 36)
+   - SW-CORE-01.conf "No 'enable password' or 'enable secret' found" (line )
    - SW-CORE-02.conf "enable password Password123" (line 7)
+   - FW-DC-01.rules "No 'enable password' or 'enable secret' found" (line )
+   - FW-DMZ-01.rules "No 'enable password' or 'enable secret' found" (line )
 
 . Default SNMP Communities:
    - RT-EDGE-01.conf "snmp-server community public RO" (line 27)
@@ -44,37 +47,52 @@ Critical Issues Found: 11
    - SW-ACCESS-01.conf "snmp-server community public" (line 24)
    - SW-ACCESS-01.conf "snmp-server community private" (line 25)
 
-. Missing Encryption:
-   - baseline-router.conf: "service password-encryption" (line 4)
-
 LOG ANALYSIS
 ------------
 Errors in Last 24 Hours: 22
 
 - security-2024-10-13.log: 6 errors
-- system-2024-10-13.log: 5 errors
 - security-2024-10-14.log: 6 errors
 - system-2024-10-14.log: 5 errors
+- system-2024-10-13.log: 5 errors
 
 Failed Login Attempts: 4
 - 2 attempts from 203.0.113.99
-- 1 attempts from 10.0.0.50
 - 1 attempts from 10.0.0.100
+- 1 attempts from 10.0.0.50
 
 Top Error Categories:
-. Authentication failures: 10
+. Authentication failures: 5
 . Service failures: 16
-. Interface down events: 2
+. Interface down events: 1
 
 MISSING BACKUPS
 ---------------
 Files without recent backup (>7 days):
-- FW-DMZ-01.rules.bak (last backup: no backup found)
-- RT-LAGER-01.conf.bak (last backup: no backup found)
-- RT-EDGE-01.conf.bak (last backup: no backup found)
-- SW-CORE-01.conf.bak (last backup: no backup found)
-- RT-EDGE-01.conf.bak (last backup: no backup found)
-- RT-EDGE-02.conf.bak (last backup: no backup found)
-- SW-CORE-01.conf.bak (last backup: no backup found)
-- SW-CORE-02.conf.bak (last backup: no backup found)
+- baseline-router.conf (last backup: no backup found)
+- FW-DC-01.rules (last backup: no backup found)
+- FW-DMZ-01.rules (last backup: 2024-09-30)
+- RT-LAGER-01.conf (last backup: 2024-09-30)
+- SW-ACCESS-01.conf (last backup: no backup found)
+
+BASELINE COMPLIANCE
+-------------------
+- RT-EDGE-01.conf: service password-encryption
+- RT-EDGE-01.conf: no ip http server
+- RT-EDGE-01.conf: no ip http secure-server
+- RT-EDGE-01.conf: ntp server
+- RT-EDGE-01.conf: banner login
+- RT-EDGE-02.conf: service password-encryption
+- RT-EDGE-02.conf: no ip http server
+- RT-EDGE-02.conf: no ip http secure-server
+- RT-EDGE-02.conf: logging host
+- RT-EDGE-02.conf: logging trap warnings
+- RT-EDGE-02.conf: ntp server
+- RT-LAGER-01.conf: service password-encryption
+- RT-LAGER-01.conf: no ip http server
+- RT-LAGER-01.conf: no ip http secure-server
+- RT-LAGER-01.conf: logging host
+- RT-LAGER-01.conf: logging trap warnings
+- RT-LAGER-01.conf: ntp server
+- RT-LAGER-01.conf: banner login
 

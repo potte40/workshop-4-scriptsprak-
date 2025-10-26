@@ -83,16 +83,14 @@ $missingEncryption = $securityIssues | Where-Object { $_.LineText -match "(?i)HT
 
 $totalIssues = $weakPasswords.Count + $defaultSNMP.Count + $missingEncryption.Count
 
-# ================================
 # SETTINGS
-# ================================
-$auditPath = Join-Path -Path $PSScriptRoot -ChildPath "network_configs"
-$backupPath = Join-Path -Path $auditPath -ChildPath "backup"
-$reportPath = Join-Path -Path $PSScriptRoot -ChildPath "security_audit.txt"
 
-# ================================
-# FILE INVENTORY
-# ================================
+$auditPath = Join-Path -Path $PSScriptRoot -ChildPath "network_configs"
+$reportPath = Join-Path -Path $PSScriptRoot -ChildPath "security_audit.txt"
+$backupRoot = Join-Path -Path $auditPath -ChildPath "backups"
+
+### FILE INVENTORY Räknare ###
+
 $allFiles = Get-ChildItem -Path $auditPath -Recurse -File
 $configFiles = $allFiles | Where-Object { $_.Extension -match "^\.(conf|rules)$" }
 $logFiles = $allFiles | Where-Object { $_.Extension -eq ".log" }
@@ -102,11 +100,10 @@ $recentFiles = $allFiles | Where-Object {
     $_.LastWriteTime -ge $weekAgo -and $_.LastWriteTime -le $now
 } | Sort-Object LastWriteTime -Descending
 
-# ================================
-# LOG ANALYSIS
-# ================================
-$logErrors = @{}           # Behåll errors per fil
-$failedPerIP = @{}         # Räknar failed logins per IP
+### LOG ANALYSIS Räknare ###
+
+$logErrors = @{}           
+$failedPerIP = @{}        
 $errorCategories = @{
     "Authentication failures" = 0
     "Interface down events"   = 0
@@ -121,7 +118,7 @@ foreach ($log in $logFiles) {
     $errorMatches = $content | Select-String -Pattern "ERROR"
     if ($errorMatches.Count -gt 0) { $logErrors[$log.Name] = $errorMatches.Count }
 
-    # Hitta FAILED LOGIN och extrahera IP
+    # Hitta FAILED LOGIN och hitta IP
     $failedMatches = $content | Select-String -Pattern "LOGIN FAIL" -SimpleMatch
     foreach ($match in $failedMatches) {
         $ips = ($match.Line | Select-String -Pattern $ipPattern -AllMatches).Matches.Value
@@ -133,49 +130,106 @@ foreach ($log in $logFiles) {
             else {
                 $failedPerIP[$ip] = 1
             }
-            $failedSum = ($failedPerIP.Values | Measure-Object -Sum).Sum
         }
     }
 
+    ### Top Error Categories ###
 
-    $interfaceDownPattern = 'ERROR.*Ethernet[\d/]+ down'
-    $interfaceDownMatches = $content | Select-String -Pattern $interfaceDownPattern
-
-    # Räkna Authentication failures
+    # Authentication failures
     $authFails = ($content | Select-String -Pattern "authentication failed").Count
     $errorCategories["Authentication failures"] += $authFails
 
-    # Räkna Interface down events
+    # Interface down events
+    $interfaceDownPattern = 'ERROR.*Ethernet[\d/]+ down'
     $interfaceDownMatches = $content | Select-String -Pattern $interfaceDownPattern
     $interfaceDownCount = $interfaceDownMatches.Count
     $errorCategories["Interface down events"] += $interfaceDownCount
 
-    # Räkna Service failures som alla ERROR minus auth och interface
-    $totalErrors = ($content | Select-String -Pattern "ERROR").Count
+    # Service failures (alla andra ERRORs)
+    $totalErrors = $errorMatches.Count
     $serviceFailures = $totalErrors - $authFails - $interfaceDownCount
-
-    # Grupp per kategori
-    $errorCategories["Authentication failures"] += $authFails
-    $errorCategories["Interface down events"] += $interfaceDownMatches.Count
     $errorCategories["Service failures"] += $serviceFailures
 }
 
 
-# ================================
-# MISSING BACKUPS
-# ================================
-$missingBackups = $backupfiles | Where-Object {
-    $backupFile = Join-Path -Path $backupPath -ChildPath $_.Name
-    (-not (Test-Path $backupFile)) -or ((Get-Item $backupFile).LastWriteTime -lt $weekAgo)
+### MISSING BACKUPS ###
+$backupIndex = @{}
+
+if (Test-Path $backupRoot) {
+    # Hitta backup-mappar 
+    $backupDirs = Get-ChildItem -Path $backupRoot -Directory -ErrorAction SilentlyContinue
+    foreach ($dir in $backupDirs) {
+        # Försök extrahera datum från mappnamn 'backup-YYYY-MM-DD'
+        $dirDate = $null
+        if ($dir.Name -match 'backup-(\d{4}-\d{2}-\d{2})') {
+            try { $dirDate = [datetime]::ParseExact($matches[1], 'yyyy-MM-dd', $null) } catch { $dirDate = $dir.LastWriteTime }
+        }
+        else {
+            # fallback: använd mappens LastWriteTime om inget datum i namnet
+            $dirDate = $dir.LastWriteTime
+        }
+
+        # Indexera filer i mappen
+        Get-ChildItem -Path $dir.FullName -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $bakName = $_.Name
+            # ta bort .bak-suffix om det finns (t.ex. SW-CORE-01.conf.bak -> SW-CORE-01.conf)
+            $origName = if ($bakName -match '\.bak$') { $bakName -replace '\.bak$', '' } else { $bakName }
+
+            # Om vi redan har ett datum för filen, spara det nyaste
+            if ($backupIndex.ContainsKey($origName)) {
+                if ($dirDate -gt $backupIndex[$origName]) {
+                    $backupIndex[$origName] = $dirDate
+                }
+            }
+            else {
+                $backupIndex[$origName] = $dirDate
+            }
+        }
+    }
 }
 
+# Jämför mot alla konfigurationsfiler i auditPath
+$allConfigFiles = $allFiles | Where-Object { $_.Extension -match '^\.(conf|rules)$' }
+
+$missingBackups = @()
+
+foreach ($cfg in $allConfigFiles) {
+    $name = $cfg.Name
+    if ($backupIndex.ContainsKey($name)) {
+        $lastBakDate = $backupIndex[$name]
+        # Om senaste backup är äldre än weekAgo → lägg i missing
+        if ($lastBakDate -lt $weekAgo) {
+            $missingBackups += [PSCustomObject]@{
+                Name       = $name
+                LastBackup = $lastBakDate.ToString('yyyy-MM-dd')
+                Status     = 'older-than-threshold'
+            }
+        }
+        # annars: backup finns och är ny nog — inget att göra
+    }
+    else {
+        # ingen backup hittad alls
+        $missingBackups += [PSCustomObject]@{
+            Name       = $name
+            LastBackup = $null
+            Status     = 'no-backup'
+        }
+    }
+}
+
+# Anropa funktion för compare mot baseline
+$configPath = Join-Path -Path $PSScriptRoot -ChildPath "network_configs"
+$securityDeviations = Compare-WithBaseline -ConfigPath $configPath
+
+
+
 # ================================
-# GENERATE REPORT
+#             RAPPORT            #
 # ================================
 $report = @"
-================================================================================
-                    SECURITY AUDIT REPORT
-================================================================================
+===============================================================================
+                        SECURITY AUDIT REPORT
+===============================================================================
 Generated: $($now.ToString("yyyy-MM-dd HH:mm:ss"))
 Audit Path: $auditPath
 
@@ -223,9 +277,7 @@ if ($missingEncryption.Count -gt 0) {
         $report += "   - $($fileName): `"$($issue.LineText)`" (line $($issue.LineNumber))`n"
     }
 }
-# ================================
-# LOG ANALYSIS REPORT
-# ================================
+
 $report += "`nLOG ANALYSIS`n------------`n"
 
 $errorsSum = ($logErrors.Values | Measure-Object -Sum).Sum
@@ -235,6 +287,7 @@ foreach ($logName in $logErrors.Keys) {
     $report += "- ${logName}: $($logErrors[$logName]) errors`n"
 }
 
+$failedSum = ($failedPerIP.Values | Measure-Object -Sum).Sum
 $report += "`nFailed Login Attempts: $failedSum`n"
 foreach ($ip in $failedPerIP.Keys) {
     $report += "- $($failedPerIP[$ip]) attempts from $ip`n"
@@ -245,21 +298,25 @@ foreach ($category in $errorCategories.Keys) {
     $report += ". ${category}: $($errorCategories[$category])`n"
 }
 
-# ================================
-# MISSING BACKUPS
-# ================================
-$report += "`nMISSING BACKUPS
----------------
-Files without recent backup (>7 days):`n"
+if ($missingBackups.Count -eq 0) {
+    $report += "`nMISSING BACKUPS`n---------------`nAll config files have recent backups.`n"
+}
+else {
+    $report += "`nMISSING BACKUPS`n---------------`nFiles without recent backup (>7 days):`n"
+    foreach ($m in $missingBackups) {
+        $last = if ($m.LastBackup) { $m.LastBackup } else { "no backup found" }
+        $report += "- $($m.Name) (last backup: $last)`n"
+    }
+}
 
-foreach ($missing in $missingBackups) {
-    $backupFile = Join-Path $backupPath $missing.Name
-    $lastBackup = if (Test-Path $backupFile) { (Get-Item $backupFile).LastWriteTime.ToString("yyyy-MM-dd") } else { "no backup found" }
-    $report += "- $($missing.Name) (last backup: $lastBackup)`n"
+$report += "`nBASELINE COMPLIANCE`n-------------------`n"
+
+$securityDeviations | ForEach-Object {
+    $report += "- $($_.File): $($_.Difference)`n"
 }
 
 # ================================
-# SAVE REPORT
+#        SKRIVA RAPPORTEN        #
 # ================================
 $report | Out-File -FilePath $reportPath -Encoding UTF8
 Write-Host "Security audit report created at $reportPath"
